@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PC OVERHEAT WARNING</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #0d0000;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        .warning-container {
+            text-align: center;
+            padding: 60px;
+            border: 8px solid #ff0033;
+            border-radius: 24px;
+            background: rgba(255, 0, 51, 0.15);
+            backdrop-filter: blur(20px);
+            box-shadow: 0 0 100px rgba(255, 0, 51, 0.8), inset 0 0 50px rgba(255, 0, 51, 0.5);
+            animation: pulse-glow 1s infinite alternate;
+            max-width: 90%;
+        }
+
+        @keyframes pulse-glow {
+            from {
+                border-color: #ff0033;
+                box-shadow: 0 0 60px rgba(255, 0, 51, 0.6);
+            }
+            to {
+                border-color: #ffaa00;
+                box-shadow: 0 0 120px rgba(255, 170, 0, 1);
+            }
+        }
+
+        .icon {
+            font-size: 110px;
+            margin-bottom: 20px;
+            animation: flame-bounce 0.6s infinite alternate;
+        }
+
+        @keyframes flame-bounce {
+            from { transform: scale(1); }
+            to { transform: scale(1.18); }
+        }
+
+        h1 {
+            font-size: 64px;
+            font-weight: 900;
+            letter-spacing: 2px;
+            color: #ff0033;
+            text-transform: uppercase;
+            text-shadow: 0 0 30px #ff0033;
+            margin-bottom: 24px;
+        }
+
+        .message {
+            font-size: 38px;
+            font-weight: 700;
+            color: #fff;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 20px 40px;
+            border-radius: 12px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 30px;
+        }
+
+        .subtext {
+            font-size: 22px;
+            color: #ffaa00;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+<body>
+    <div class="warning-container">
+        <div class="icon">🔥 ⚠️ 🔥</div>
+        <h1>CRITICAL SYSTEM WARNING</h1>
+        <div id="warningMsg" class="message">WARNING: THE PC IS TURNING HOT!</div>
+        <div class="subtext">Use /stopwarning in Discord to dismiss this screen.</div>
+    </div>
+
+    <script>
+        // Parse message parameter from URL query string if provided
+        const params = new URLSearchParams(window.location.search);
+        const customMsg = params.get('msg');
+        if (customMsg) {
+            document.getElementById('warningMsg').textContent = customMsg;
+        }
+    </script>
+</body>
+</html>

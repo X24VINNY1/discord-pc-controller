@@ -84,6 +84,7 @@ let botStatus = 'OFFLINE';
 let activeShutdownTimer = null;
 let activeShutdownSeconds = 0;
 let countdownInterval = null;
+let activeWarningState = false;
 
 // Slash Commands Definition
 const commands = [
@@ -98,6 +99,17 @@ const commands = [
     new SlashCommandBuilder()
         .setName('cancel')
         .setDescription('Cancels an ongoing PC shutdown timer'),
+    new SlashCommandBuilder()
+        .setName('warning')
+        .setDescription('Displays a giant flashing warning overlay on your PC screen!')
+        .addStringOption(opt =>
+            opt.setName('message')
+               .setDescription('Custom warning message text (Optional)')
+               .setRequired(false)
+        ),
+    new SlashCommandBuilder()
+        .setName('stopwarning')
+        .setDescription('Stops and closes the PC screen warning overlay'),
     new SlashCommandBuilder()
         .setName('status')
         .setDescription('View connected PC agent status and bot metrics'),
@@ -135,7 +147,7 @@ async function registerSlashCommands(token, clientId, guildId) {
 // Trigger Shutdown Signal to Local Agent
 function dispatchShutdownSignal(seconds = 10, triggeredBy = 'Web Dashboard') {
     if (connectedAgents.size === 0) {
-        return { success: false, message: 'No local PC agent is currently connected! Run agent.js on your computer first.' };
+        return { success: false, message: 'No local PC agent is currently connected!' };
     }
 
     if (activeShutdownSeconds > 0) {
@@ -146,14 +158,13 @@ function dispatchShutdownSignal(seconds = 10, triggeredBy = 'Web Dashboard') {
 
     activeShutdownSeconds = seconds;
 
-    // Send payload to all connected agents
     const payload = JSON.stringify({
         type: 'EXECUTE_SHUTDOWN',
         seconds,
         triggeredBy
     });
 
-    connectedAgents.forEach((agentWs, hostname) => {
+    connectedAgents.forEach((agentWs) => {
         if (agentWs.readyState === WebSocket.OPEN) {
             agentWs.send(payload);
         }
@@ -174,10 +185,6 @@ function dispatchShutdownSignal(seconds = 10, triggeredBy = 'Web Dashboard') {
 
 // Trigger Abort Signal to Local Agent
 function dispatchCancelSignal(triggeredBy = 'Web Dashboard') {
-    if (activeShutdownSeconds <= 0) {
-        // Send cancel anyway to be safe
-    }
-
     if (countdownInterval) clearInterval(countdownInterval);
     countdownInterval = null;
     activeShutdownSeconds = 0;
@@ -197,6 +204,51 @@ function dispatchCancelSignal(triggeredBy = 'Web Dashboard') {
 
     broadcastState();
     return { success: true, message: `Shutdown canceled successfully!` };
+}
+
+// Trigger Warning Overlay on PC Screen
+function dispatchWarningSignal(customMessage, triggeredBy = 'Web Dashboard') {
+    if (connectedAgents.size === 0) {
+        return { success: false, message: 'No local PC agent is connected!' };
+    }
+
+    activeWarningState = true;
+    const msgText = customMessage || '⚠️ WARNING: THE PC IS TURNING HOT! ⚠️';
+    log(`Dispatching GIANT WARNING overlay to PC screen by ${triggeredBy}: "${msgText}"`, 'warn');
+
+    const payload = JSON.stringify({
+        type: 'SHOW_WARNING',
+        message: msgText,
+        triggeredBy
+    });
+
+    connectedAgents.forEach((agentWs) => {
+        if (agentWs.readyState === WebSocket.OPEN) {
+            agentWs.send(payload);
+        }
+    });
+
+    broadcastState();
+    return { success: true, message: 'Giant warning screen displayed on PC!' };
+}
+
+function dispatchStopWarningSignal(triggeredBy = 'Web Dashboard') {
+    activeWarningState = false;
+    log(`Dispatching STOP WARNING signal to PC by ${triggeredBy}...`, 'info');
+
+    const payload = JSON.stringify({
+        type: 'STOP_WARNING',
+        triggeredBy
+    });
+
+    connectedAgents.forEach((agentWs) => {
+        if (agentWs.readyState === WebSocket.OPEN) {
+            agentWs.send(payload);
+        }
+    });
+
+    broadcastState();
+    return { success: true, message: 'PC Warning screen closed.' };
 }
 
 // Bot Control Functions
@@ -256,7 +308,8 @@ async function startBot() {
                         .addFields(
                             { name: '🤖 Bot Status', value: `\`ONLINE\` (@${client.user.tag})`, inline: true },
                             { name: '💻 Connected PC Agents', value: `\`${connectedAgents.size}\` (${agentList})`, inline: true },
-                            { name: '🚨 Active Timer', value: activeShutdownSeconds > 0 ? `\`${activeShutdownSeconds}s remaining\`` : '`None`', inline: true }
+                            { name: '🚨 Active Warning', value: activeWarningState ? '`YES (Flashing Warning Screen)`' : '`None`', inline: true },
+                            { name: '⏱️ Shutdown Timer', value: activeShutdownSeconds > 0 ? `\`${activeShutdownSeconds}s remaining\`` : '`None`', inline: true }
                         )
                         .setTimestamp();
 
@@ -268,7 +321,7 @@ async function startBot() {
 
                     if (connectedAgents.size === 0) {
                         await interaction.reply({ 
-                            content: `❌ **No Local PC Agent Connected!**\nRun \`agent.js\` on your target PC so it can receive shutdown signals.`, 
+                            content: `❌ **No Local PC Agent Connected!**`, 
                             ephemeral: true 
                         });
                         return;
@@ -283,7 +336,6 @@ async function startBot() {
                     }
 
                     const res = dispatchShutdownSignal(seconds, `@${interaction.user.tag}`);
-
                     if (!res.success) {
                         await interaction.reply({ content: `❌ ${res.message}`, ephemeral: true });
                         return;
@@ -298,7 +350,7 @@ async function startBot() {
 
                     const embed = new EmbedBuilder()
                         .setTitle('🚨 PC SHUTDOWN INITIATED')
-                        .setDescription(`Target PC Agent will shut down in **${seconds} seconds**!\n\nTriggered by: <@${interaction.user.id}>\nClick below or type \`/cancel\` to abort!`)
+                        .setDescription(`Target PC will shut down in **${seconds} seconds**!\n\nTriggered by: <@${interaction.user.id}>\nClick below or type \`/cancel\` to abort!`)
                         .setColor(0xFF0033)
                         .setTimestamp();
 
@@ -306,11 +358,41 @@ async function startBot() {
                 }
 
                 else if (commandName === 'cancel') {
-                    const res = dispatchCancelSignal(`@${interaction.user.tag}`);
+                    dispatchCancelSignal(`@${interaction.user.tag}`);
                     await interaction.reply({ 
                         content: `✅ **SHUTDOWN ABORTED** by <@${interaction.user.id}>! Computer will stay on.`, 
                         ephemeral: false 
                     });
+                }
+
+                else if (commandName === 'warning') {
+                    const customMsg = interaction.options.getString('message') || '⚠️ WARNING: THE PC IS TURNING HOT! ⚠️';
+                    const res = dispatchWarningSignal(customMsg, `@${interaction.user.tag}`);
+
+                    if (!res.success) {
+                        await interaction.reply({ content: `❌ ${res.message}`, ephemeral: true });
+                        return;
+                    }
+
+                    const stopBtn = new ButtonBuilder()
+                        .setCustomId('btn_stop_warning')
+                        .setLabel('STOP WARNING SCREEN')
+                        .setStyle(ButtonStyle.Success);
+
+                    const row = new ActionRowBuilder().addComponents(stopBtn);
+
+                    const embed = new EmbedBuilder()
+                        .setTitle('🔥 GIANT PC WARNING DISPLAYED!')
+                        .setDescription(`Displaying warning screen on PC monitor!\n\n**Text:** \`${customMsg}\` \n\nTriggered by: <@${interaction.user.id}>\nType \`/stopwarning\` or click button to close.`)
+                        .setColor(0xFF8800)
+                        .setTimestamp();
+
+                    await interaction.reply({ embeds: [embed], components: [row] });
+                }
+
+                else if (commandName === 'stopwarning') {
+                    dispatchStopWarningSignal(`@${interaction.user.tag}`);
+                    await interaction.reply({ content: `✅ **PC Warning Screen Closed** by <@${interaction.user.id}>!`, ephemeral: false });
                 }
             }
 
@@ -323,6 +405,15 @@ async function startBot() {
                         .setColor(0x00FF88)
                         .setTimestamp();
                     
+                    await interaction.update({ embeds: [embed], components: [] });
+                } else if (interaction.customId === 'btn_stop_warning') {
+                    dispatchStopWarningSignal(`@${interaction.user.tag}`);
+                    const embed = new EmbedBuilder()
+                        .setTitle('✅ WARNING CLOSED')
+                        .setDescription(`Warning screen closed by <@${interaction.user.id}>.`)
+                        .setColor(0x00FF88)
+                        .setTimestamp();
+
                     await interaction.update({ embeds: [embed], components: [] });
                 }
             }
@@ -363,6 +454,7 @@ function getSystemStatus() {
         connectedAgentsCount: connectedAgents.size,
         connectedAgents: Array.from(connectedAgents.keys()),
         shutdownTimeRemaining: activeShutdownSeconds,
+        activeWarningState,
         config: {
             hasToken: Boolean(config.token),
             clientId: config.clientId,
@@ -420,9 +512,20 @@ app.post('/api/shutdown/cancel', (req, res) => {
     res.json(result);
 });
 
+app.post('/api/warning/start', (req, res) => {
+    const msg = req.body.message;
+    const result = dispatchWarningSignal(msg, 'Web Dashboard UI');
+    res.json(result);
+});
+
+app.post('/api/warning/stop', (req, res) => {
+    const result = dispatchStopWarningSignal('Web Dashboard UI');
+    res.json(result);
+});
+
 app.get('/api/logs', (req, res) => res.json(logs));
 
-// WebSocket Handling (UI clients & PC Agents)
+// WebSocket Handling
 wss.on('connection', (ws, req) => {
     ws.isUI = true;
 
@@ -430,10 +533,9 @@ wss.on('connection', (ws, req) => {
         try {
             const data = JSON.parse(message);
 
-            // Local Agent Registration
             if (data.type === 'AGENT_REGISTER') {
                 if (data.secret !== config.agentSecret) {
-                    log(`Agent registration rejected for ${data.hostname}: Invalid secret key!`, 'error');
+                    log(`Agent registration rejected: Invalid secret!`, 'error');
                     ws.send(JSON.stringify({ type: 'REGISTER_FAILED', reason: 'Invalid secret key' }));
                     ws.close();
                     return;
@@ -443,7 +545,7 @@ wss.on('connection', (ws, req) => {
                 ws.agentHostname = data.hostname || 'Unknown-PC';
                 connectedAgents.set(ws.agentHostname, ws);
 
-                log(`🟢 PC Agent connected: ${ws.agentHostname} (${data.platform})`, 'success');
+                log(`🟢 PC Agent connected: ${ws.agentHostname}`, 'success');
                 ws.send(JSON.stringify({ type: 'REGISTER_OK' }));
                 broadcastState();
             }
@@ -451,9 +553,7 @@ wss.on('connection', (ws, req) => {
             else if (data.type === 'AGENT_LOG') {
                 log(`[Agent ${ws.agentHostname}] ${data.msg}`, data.level || 'info');
             }
-        } catch (e) {
-            // Ignore non-JSON messages
-        }
+        } catch (e) {}
     });
 
     ws.on('close', () => {
@@ -464,11 +564,9 @@ wss.on('connection', (ws, req) => {
         }
     });
 
-    // Send initial snapshot to UI clients
     ws.send(JSON.stringify({ type: 'init', data: { state: getSystemStatus(), logs } }));
 });
 
-// Start Server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`\n==================================================`);

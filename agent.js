@@ -3,20 +3,18 @@
  * 
  * Runs on your computer in the background.
  * Connects to your Render Cloud server (or local server) via WebSockets.
- * Listens for /shutdown commands and executes OS shutdown.
+ * Listens for /shutdown, /warning, and /stopwarning commands.
  */
 
 const WebSocket = require('ws');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
 
-// Config file for local agent settings
 const AGENT_CONFIG_FILE = path.join(__dirname, 'agent_config.json');
 
 let config = {
-    // Change this to your Render URL when deployed! (e.g. 'wss://your-app.onrender.com')
     serverUrl: process.env.SERVER_URL || 'ws://localhost:3000',
     secret: process.env.AGENT_SECRET || 'onyx-secure-pc-secret-67',
     reconnectInterval: 5000
@@ -30,7 +28,7 @@ if (fs.existsSync(AGENT_CONFIG_FILE)) {
 }
 
 let ws = null;
-let localTimer = null;
+let warningProcess = null;
 
 console.log(`\n==================================================`);
 console.log(`🖥️  Discord PC Controller - Local Agent Active`);
@@ -70,19 +68,13 @@ function connect() {
                 const triggeredBy = payload.triggeredBy || 'Discord User';
                 console.log(`\n⚠️ [SHUTDOWN SIGNAL RECEIVED] Triggered by ${triggeredBy}! Timer: ${seconds}s`);
 
-                let cmd = '';
-                if (process.platform === 'win32') {
-                    cmd = `shutdown /s /t ${seconds} /c "Remote Shutdown triggered via Discord by ${triggeredBy}"`;
-                } else {
-                    cmd = `shutdown -h +${Math.ceil(seconds / 60)}`;
-                }
+                let cmd = process.platform === 'win32' 
+                    ? `shutdown /s /t ${seconds} /c "Remote Shutdown triggered via Discord by ${triggeredBy}"`
+                    : `shutdown -h +${Math.ceil(seconds / 60)}`;
 
                 exec(cmd, (err, stdout, stderr) => {
-                    if (err) {
-                        console.error(`Execution error: ${err.message}`);
-                    } else {
-                        console.log(`OS Shutdown executed: ${stdout || 'OK'}`);
-                    }
+                    if (err) console.error(`Execution error: ${err.message}`);
+                    else console.log(`OS Shutdown executed: ${stdout || 'OK'}`);
                 });
             }
 
@@ -92,12 +84,33 @@ function connect() {
 
                 let cancelCmd = process.platform === 'win32' ? 'shutdown /a' : 'shutdown -c';
                 exec(cancelCmd, (err, stdout, stderr) => {
-                    if (err) {
-                        console.error(`Failed to cancel shutdown: ${err.message}`);
-                    } else {
-                        console.log(`✅ OS Shutdown canceled!`);
-                    }
+                    if (err) console.error(`Failed to cancel shutdown: ${err.message}`);
+                    else console.log(`✅ OS Shutdown canceled!`);
                 });
+            }
+
+            else if (payload.type === 'SHOW_WARNING') {
+                const msg = payload.message || 'WARNING: THE PC IS TURNING HOT!';
+                const triggeredBy = payload.triggeredBy || 'Discord User';
+                console.log(`\n🔥 [GIANT WARNING DISPLAYED] Triggered by ${triggeredBy}: "${msg}"`);
+
+                closeWarningOverlay();
+
+                const warningHtmlPath = path.join(__dirname, 'warning_screen.html');
+                const encodedMsg = encodeURIComponent(msg);
+                const fileUrl = `file:///${warningHtmlPath.replace(/\\/g, '/')}?msg=${encodedMsg}`;
+
+                if (process.platform === 'win32') {
+                    // Launch Edge in app mode & fullscreen
+                    warningProcess = spawn('cmd.exe', ['/c', 'start', 'msedge', `--app=${fileUrl}`, '--start-fullscreen'], { detached: true });
+                } else {
+                    warningProcess = spawn('xdg-open', [fileUrl], { detached: true });
+                }
+            }
+
+            else if (payload.type === 'STOP_WARNING') {
+                console.log(`\n✅ [STOP WARNING SIGNAL RECEIVED] Closing warning overlay screen...`);
+                closeWarningOverlay();
             }
         } catch (e) {
             console.error('Message error:', e.message);
@@ -112,6 +125,16 @@ function connect() {
     ws.on('error', (err) => {
         console.error(`WebSocket error: ${err.message}`);
     });
+}
+
+function closeWarningOverlay() {
+    if (process.platform === 'win32') {
+        exec('taskkill /f /im msedge.exe', () => {});
+    }
+    if (warningProcess) {
+        try { warningProcess.kill(); } catch (e) {}
+        warningProcess = null;
+    }
 }
 
 connect();

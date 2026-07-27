@@ -25,7 +25,10 @@ const CONFIG_FILE = path.join(__dirname, 'config.json');
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Environment Variables (Render supported)
+// Root Health Check for Render deployment
+app.get('/health', (req, res) => res.status(200).send('OK'));
+
+// Configuration Setup (Environment variables prioritized for Render)
 let config = {
     token: process.env.DISCORD_TOKEN || '',
     clientId: process.env.CLIENT_ID || '',
@@ -37,7 +40,13 @@ let config = {
 if (fs.existsSync(CONFIG_FILE)) {
     try {
         const savedConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-        config = { ...config, ...savedConfig };
+        // Env vars always override file config on Render
+        config = { 
+            ...config, 
+            ...savedConfig,
+            token: process.env.DISCORD_TOKEN || savedConfig.token || config.token,
+            clientId: process.env.CLIENT_ID || savedConfig.clientId || config.clientId
+        };
     } catch (e) {
         console.error('Failed to read config file:', e.message);
     }
@@ -143,10 +152,10 @@ async function registerSlashCommands(token, clientId, guildId) {
     }
 }
 
-// Trigger Shutdown Signal to Local Agent
+// Dispatch Signals
 function dispatchShutdownSignal(seconds = 10, triggeredBy = 'Web Dashboard') {
     if (connectedAgents.size === 0) {
-        return { success: false, message: 'No local PC agent is currently connected!' };
+        return { success: false, message: 'No local PC agent is currently connected! Make sure your PC is turned on.' };
     }
 
     if (activeShutdownSeconds > 0) {
@@ -182,7 +191,6 @@ function dispatchShutdownSignal(seconds = 10, triggeredBy = 'Web Dashboard') {
     return { success: true, message: `Shutdown signal sent to PC agent! (${seconds}s remaining)` };
 }
 
-// Trigger Abort Signal to Local Agent
 function dispatchCancelSignal(triggeredBy = 'Web Dashboard') {
     if (countdownInterval) clearInterval(countdownInterval);
     countdownInterval = null;
@@ -205,10 +213,9 @@ function dispatchCancelSignal(triggeredBy = 'Web Dashboard') {
     return { success: true, message: `Shutdown canceled successfully!` };
 }
 
-// Trigger Warning Overlay on PC Screen
 function dispatchWarningSignal(customMessage, triggeredBy = 'Web Dashboard') {
     if (connectedAgents.size === 0) {
-        return { success: false, message: 'No local PC agent is connected! Autostart script will connect on boot.' };
+        return { success: false, message: 'No local PC agent is connected! Make sure your PC is on.' };
     }
 
     activeWarningState = true;
@@ -252,7 +259,10 @@ function dispatchStopWarningSignal(triggeredBy = 'Web Dashboard') {
 
 // Bot Control Functions
 async function startBot() {
-    if (!config.token || !config.clientId) {
+    const token = process.env.DISCORD_TOKEN || config.token;
+    const clientId = process.env.CLIENT_ID || config.clientId;
+
+    if (!token || !clientId) {
         log('Cannot start bot: DISCORD_TOKEN and CLIENT_ID are required.', 'error');
         botStatus = 'ERROR';
         broadcastState();
@@ -264,7 +274,7 @@ async function startBot() {
     }
 
     botStatus = 'CONNECTING';
-    log('Connecting Discord Bot to Discord Gateway...', 'info');
+    log('Connecting Discord Bot to Gateway...', 'info');
     broadcastState();
 
     client = new Client({
@@ -276,8 +286,8 @@ async function startBot() {
 
     client.on('ready', async () => {
         botStatus = 'ONLINE';
-        log(`Bot logged in as @${client.user.tag}!`, 'success');
-        await registerSlashCommands(config.token, config.clientId, config.guildId);
+        log(`Bot successfully online 24/7 as @${client.user.tag}!`, 'success');
+        await registerSlashCommands(token, clientId, config.guildId);
         broadcastState();
     });
 
@@ -294,7 +304,7 @@ async function startBot() {
 
                 if (commandName === 'ping') {
                     await interaction.reply({ 
-                        content: `🏓 Pong! Bot Latency: \`${client.ws.ping}ms\` | Agents Connected: \`${connectedAgents.size}\``, 
+                        content: `🏓 Pong! Bot Latency: \`${client.ws.ping}ms\` | Connected Local Agents: \`${connectedAgents.size}\``, 
                         ephemeral: true 
                     });
                 }
@@ -305,7 +315,7 @@ async function startBot() {
                         .setTitle('⚡ Discord PC Controller Status')
                         .setColor(connectedAgents.size > 0 ? 0x00FF88 : 0xFFB300)
                         .addFields(
-                            { name: '🤖 Bot Status', value: `\`ONLINE\` (@${client.user.tag})`, inline: true },
+                            { name: '🤖 Bot Status', value: `\`ONLINE 24/7\` (@${client.user.tag})`, inline: true },
                             { name: '💻 Connected PC Agents', value: `\`${connectedAgents.size}\` (${agentList})`, inline: true },
                             { name: '🚨 Active Warning', value: activeWarningState ? '`YES (Flashing Warning Screen)`' : '`None`', inline: true },
                             { name: '⏱️ Shutdown Timer', value: activeShutdownSeconds > 0 ? `\`${activeShutdownSeconds}s remaining\`` : '`None`', inline: true }
@@ -320,7 +330,7 @@ async function startBot() {
 
                     if (connectedAgents.size === 0) {
                         await interaction.reply({ 
-                            content: `❌ **No Local PC Agent Connected!** Make sure your PC is powered on.`, 
+                            content: `❌ **No Local PC Agent Connected!** Make sure your PC is powered on and agent is running.`, 
                             ephemeral: true 
                         });
                         return;
@@ -369,7 +379,7 @@ async function startBot() {
                     
                     if (connectedAgents.size === 0) {
                         await interaction.reply({ 
-                            content: `❌ **No Local PC Agent Connected!** Make sure your PC is turned on and agent is active.`, 
+                            content: `❌ **No Local PC Agent Connected!** Make sure your PC is turned on.`, 
                             ephemeral: true 
                         });
                         return;
@@ -422,16 +432,11 @@ async function startBot() {
             }
         } catch (err) {
             log(`Interaction error: ${err.message}`, 'error');
-            try {
-                if (!interaction.replied && !interaction.deferred) {
-                    await interaction.reply({ content: `⚠️ Error executing command: ${err.message}`, ephemeral: true });
-                }
-            } catch (e) {}
         }
     });
 
     try {
-        await client.login(config.token);
+        await client.login(token);
         return true;
     } catch (err) {
         log(`Bot Login Failed: ${err.message}`, 'error');
@@ -464,8 +469,8 @@ function getSystemStatus() {
         shutdownTimeRemaining: activeShutdownSeconds,
         activeWarningState,
         config: {
-            hasToken: Boolean(config.token),
-            clientId: config.clientId,
+            hasToken: Boolean(process.env.DISCORD_TOKEN || config.token),
+            clientId: process.env.CLIENT_ID || config.clientId,
             guildId: config.guildId,
             shutdownDelay: config.shutdownDelay
         }
@@ -476,10 +481,11 @@ function getSystemStatus() {
 app.get('/api/status', (req, res) => res.json(getSystemStatus()));
 
 app.get('/api/config', (req, res) => {
+    const curToken = process.env.DISCORD_TOKEN || config.token;
     res.json({
-        token: config.token ? '••••••••••••••••' + config.token.slice(-4) : '',
-        rawToken: config.token,
-        clientId: config.clientId,
+        token: curToken ? '••••••••••••••••' + curToken.slice(-4) : '',
+        rawToken: curToken,
+        clientId: process.env.CLIENT_ID || config.clientId,
         guildId: config.guildId,
         shutdownDelay: config.shutdownDelay,
         agentSecret: config.agentSecret
@@ -576,15 +582,18 @@ wss.on('connection', (ws, req) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`\n==================================================`);
     console.log(`🚀 Discord PC Controller Cloud Server online!`);
     console.log(`🌐 Server Port: ${PORT}`);
     console.log(`==================================================\n`);
     log(`Server running on port ${PORT}`, 'info');
 
-    if (config.token && config.clientId) {
-        log('Auto-starting Discord Bot...', 'info');
+    const token = process.env.DISCORD_TOKEN || config.token;
+    const clientId = process.env.CLIENT_ID || config.clientId;
+
+    if (token && clientId) {
+        log('Auto-starting 24/7 Discord Bot...', 'info');
         startBot();
     }
 });

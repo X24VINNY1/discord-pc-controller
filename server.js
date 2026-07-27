@@ -81,7 +81,6 @@ function broadcastState() {
 // Discord Client State
 let client = null;
 let botStatus = 'OFFLINE';
-let activeShutdownTimer = null;
 let activeShutdownSeconds = 0;
 let countdownInterval = null;
 let activeWarningState = false;
@@ -209,7 +208,7 @@ function dispatchCancelSignal(triggeredBy = 'Web Dashboard') {
 // Trigger Warning Overlay on PC Screen
 function dispatchWarningSignal(customMessage, triggeredBy = 'Web Dashboard') {
     if (connectedAgents.size === 0) {
-        return { success: false, message: 'No local PC agent is connected!' };
+        return { success: false, message: 'No local PC agent is connected! Autostart script will connect on boot.' };
     }
 
     activeWarningState = true;
@@ -321,7 +320,7 @@ async function startBot() {
 
                     if (connectedAgents.size === 0) {
                         await interaction.reply({ 
-                            content: `❌ **No Local PC Agent Connected!**`, 
+                            content: `❌ **No Local PC Agent Connected!** Make sure your PC is powered on.`, 
                             ephemeral: true 
                         });
                         return;
@@ -367,12 +366,16 @@ async function startBot() {
 
                 else if (commandName === 'warning') {
                     const customMsg = interaction.options.getString('message') || '⚠️ WARNING: THE PC IS TURNING HOT! ⚠️';
-                    const res = dispatchWarningSignal(customMsg, `@${interaction.user.tag}`);
-
-                    if (!res.success) {
-                        await interaction.reply({ content: `❌ ${res.message}`, ephemeral: true });
+                    
+                    if (connectedAgents.size === 0) {
+                        await interaction.reply({ 
+                            content: `❌ **No Local PC Agent Connected!** Make sure your PC is turned on and agent is active.`, 
+                            ephemeral: true 
+                        });
                         return;
                     }
+
+                    const res = dispatchWarningSignal(customMsg, `@${interaction.user.tag}`);
 
                     const stopBtn = new ButtonBuilder()
                         .setCustomId('btn_stop_warning')
@@ -419,6 +422,11 @@ async function startBot() {
             }
         } catch (err) {
             log(`Interaction error: ${err.message}`, 'error');
+            try {
+                if (!interaction.replied && !interaction.deferred) {
+                    await interaction.reply({ content: `⚠️ Error executing command: ${err.message}`, ephemeral: true });
+                }
+            } catch (e) {}
         }
     });
 

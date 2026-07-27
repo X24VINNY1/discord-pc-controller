@@ -1,0 +1,6 @@
+node_modules/
+config.json
+agent_config.json
+.env
+.DS_Store
+*.log

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord PC Controller Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-effects">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="grid-overlay"></div>
+    </div>
+
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="brand">
+                <div class="brand-icon">⚡</div>
+                <div class="brand-text">
+                    <h1>Discord PC Controller</h1>
+                    <span class="subtext">Remote Command & Automation Suite</span>
+                </div>
+            </div>
+            <div class="status-badge-container">
+                <div id="botStatusBadge" class="status-badge status-offline">
+                    <span class="status-dot"></span>
+                    <span id="botStatusText">BOT OFFLINE</span>
+                </div>
+                <div id="pcStatusBadge" class="status-badge status-online">
+                    <span class="status-dot"></span>
+                    <span id="hostnameText">PC ONLINE</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Emergency Banner (Hidden by default) -->
+        <div id="shutdownBanner" class="shutdown-banner hidden">
+            <div class="banner-content">
+                <div class="warning-pulse">⚠️</div>
+                <div class="banner-text">
+                    <h2>SYSTEM SHUTDOWN IN PROGRESS!</h2>
+                    <p>Computer will power off in <span id="countdownSecs">10</span> seconds.</p>
+                </div>
+                <button id="cancelShutdownBannerBtn" class="btn btn-abort">
+                    🛑 CANCEL SHUTDOWN NOW
+                </button>
+            </div>
+        </div>
+
+        <main class="dashboard-grid">
+            <!-- Left Column: Controls & Metrics -->
+            <section class="column col-left">
+                <!-- Direct Controls Card -->
+                <div class="card glass">
+                    <div class="card-header">
+                        <h3>⚡ Quick Actions</h3>
+                        <span class="badge">Host Execution</span>
+                    </div>
+                    <div class="card-body controls-body">
+                        <div class="delay-picker">
+                            <label for="delayInput">Shutdown Delay (sec):</label>
+                            <input type="number" id="delayInput" value="10" min="1" max="3600">
+                        </div>
+                        <div class="action-buttons-grid">
+                            <button id="triggerShutdownBtn" class="btn btn-danger btn-glow">
+                                <span class="icon">🚨</span> Trigger Shutdown
+                            </button>
+                            <button id="triggerCancelBtn" class="btn btn-secondary">
+                                <span class="icon">🛡️</span> Abort Shutdown
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bot Status & Controls Card -->
+                <div class="card glass">
+                    <div class="card-header">
+                        <h3>🤖 Discord Bot Manager</h3>
+                        <span id="botTagText" class="badge badge-tag">Not Connected</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="bot-actions-row">
+                            <button id="startBotBtn" class="btn btn-primary">
+                                ▶️ Start Bot
+                            </button>
+                            <button id="stopBotBtn" class="btn btn-outline-danger">
+                                ⏹️ Stop Bot
+                            </button>
+                        </div>
+
+                        <form id="configForm" class="config-form">
+                            <div class="form-group">
+                                <label for="botToken">Discord Bot Token</label>
+                                <div class="input-password-wrapper">
+                                    <input type="password" id="botToken" placeholder="Paste Bot Token here..." autocomplete="off">
+                                    <button type="button" id="toggleTokenBtn" class="btn-icon">👁️</button>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group col-6">
+                                    <label for="clientId">Application / Client ID</label>
+                                    <input type="text" id="clientId" placeholder="1234567890..." autocomplete="off">
+                                </div>
+                                <div class="form-group col-6">
+                                    <label for="guildId">Guild Server ID (Optional)</label>
+                                    <input type="text" id="guildId" placeholder="Instant sync..." autocomplete="off">
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-save">
+                                💾 Save Configuration
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- System Info Card -->
+                <div class="card glass">
+                    <div class="card-header">
+                        <h3>💻 PC System Specs</h3>
+                    </div>
+                    <div class="card-body specs-grid">
+                        <div class="spec-item">
+                            <span class="spec-label">Hostname</span>
+                            <span id="specHost" class="spec-val">--</span>
+                        </div>
+                        <div class="spec-item">
+                            <span class="spec-label">OS Platform</span>
+                            <span id="specOS" class="spec-val">--</span>
+                        </div>
+                        <div class="spec-item">
+                            <span class="spec-label">PC Uptime</span>
+                            <span id="specUptime" class="spec-val">--</span>
+                        </div>
+                        <div class="spec-item">
+                            <span class="spec-label">Free RAM</span>
+                            <span id="specRAM" class="spec-val">--</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Column: Discord Command Instructions & Live Logs -->
+            <section class="column col-right">
+                <!-- Discord Slash Commands Guide Card -->
+                <div class="card glass">
+                    <div class="card-header">
+                        <h3>💬 Discord Slash Commands</h3>
+                        <span class="badge badge-accent">Available in Discord</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="command-list">
+                            <div class="command-card">
+                                <div class="cmd-title"><code>/shutdown [seconds]</code></div>
+                                <div class="cmd-desc">Triggers computer shutdown sequence with interactive abort button in Discord channel.</div>
+                            </div>
+                            <div class="command-card">
+                                <div class="cmd-title"><code>/cancel</code></div>
+                                <div class="cmd-desc">Immediately cancels an active shutdown countdown.</div>
+                            </div>
+                            <div class="command-card">
+                                <div class="cmd-title"><code>/status</code></div>
+                                <div class="cmd-desc">Displays system specs, PC uptime, and active timer stats in an embed.</div>
+                            </div>
+                            <div class="command-card">
+                                <div class="cmd-title"><code>/ping</code></div>
+                                <div class="cmd-desc">Check bot latency and roundtrip response time.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Console Logs Terminal Card -->
+                <div class="card glass terminal-card">
+                    <div class="card-header">
+                        <div class="terminal-dots">
+                            <span class="dot red"></span>
+                            <span class="dot yellow"></span>
+                            <span class="dot green"></span>
+                        </div>
+                        <h3>🖥️ Realtime Server & Bot Log Output</h3>
+                        <button id="clearLogsBtn" class="btn-small">Clear</button>
+                    </div>
+                    <div class="card-body terminal-body">
+                        <div id="terminalLogs" class="terminal-content">
+                            <!-- Logs dynamically stream here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: discord-pc-controller
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: CLIENT_ID
+        sync: false
+      - key: GUILD_ID
+        sync: false
+      - key: AGENT_SECRET
+        value: onyx-secure-pc-secret-67
